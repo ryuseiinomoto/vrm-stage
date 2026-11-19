@@ -55,6 +55,9 @@ html,body{background:#000;overflow:hidden;height:100%}
 @media (max-width:760px){.sv-title b{font-size:22px;letter-spacing:6px}.sv-hint{display:none}.sv-bar{left:8px;right:8px;top:auto;bottom:8px;width:auto;height:44vh}.sv-credit{display:none}.sv-hud{left:8px;right:8px;top:70px;bottom:calc(44vh + 16px)}}
 `;
 
+// Wallpaper mode (stage-wall.html, or ?wall on the address): no panel, no lettering, a camera that drifts by itself,
+// and half the frame rate to go easy on the battery.
+const WALL = !!globalThis.STAGE_WALL || new URLSearchParams(location.search).has('wall');
 const D2R = Math.PI / 180;
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const el = (h, parent) => {
@@ -84,6 +87,7 @@ const credit = el(`<div class="sv-credit"></div>`, app);
 const bar = el(`<div class="sv-bar"><div class="sv-tabs"></div></div>`, app);
 const drop = el(`<div class="sv-drop">ここに .vrm ファイルをドロップ</div>`, app);
 const loading = el(`<div class="sv-load">LOADING</div>`, app);
+if (WALL) for (const n of app.querySelectorAll('.sv-title,.sv-hint,.sv-hud,.sv-credit,.sv-bar,.sv-drop')) n.style.display = 'none';
 
 // ------------------------------------------------------------ stage
 const renderer = new THREE.WebGLRenderer({canvas, antialias: true, powerPreference: 'high-performance'});
@@ -599,7 +603,7 @@ const THEMES = {
   angel: {name: '天使', hair: '#f3d67c', eye: '#69d8b4', top: '#ffffff', pattern: 'plain', color2: '#f3d67c', bottom: '#ffffff', shoes: '#f3d67c', hoodie: false, kicks: false, hoodieCol: '#15161b', emblemCol: '#dfe2ea', kickCol: '#15161b', headset: false, visor: false, patch: false, holo: false, ribbon: false, flower: false, ears: false, tail: false, halo: true, wings: true, acc: '#f3d67c', fx: 'spark', bg: 'aurora', light: 'gold', beam: true, grid: false, rings: false, hud: false, floorPat: 'sq', stand: 'stage', floor: false},
   plain: {name: '元にもどす', hair: null, eye: null, top: null, bottom: null, shoes: null, pattern: 'plain', color2: '#e4476b', hoodie: false, kicks: false, hoodieCol: '#15161b', emblemCol: '#dfe2ea', kickCol: '#15161b', headset: false, visor: false, patch: false, holo: false, ribbon: false, flower: false, ears: false, tail: false, halo: false, wings: false, acc: '#e4476b', fx: 'dust', bg: 'black', light: 'white', beam: false, grid: false, rings: false, hud: false, floorPat: 'sq', stand: 'none', floor: true},
 };
-const S = {spin: true, pose: 'float', face: 'neutral', look: 'bold', nose: 'up2', cam: 'full', thigh: 1.12, rainbow: true, ...THEMES.ruin};
+const S = {spin: !WALL, pose: 'float', face: 'neutral', look: 'bold', nose: 'up2', cam: 'full', thigh: 1.12, rainbow: true, ...THEMES.ruin};
 delete S.name;
 const CAMS = {
   full: {name: '全身', ty: 0.5, d: 4.05, az: 12, el: 9},
@@ -628,6 +632,9 @@ let browMats = [];
 const off = {az: 0, el: 0, k: 1};
 const cam = {ty: 0.8, d: 3, az: 12, el: 4};
 let turn = 0;
+let spinRate = 0.42; // radians a second
+let manual = false; // true while a recording steps the clock itself
+let skip = 0;
 let poseNow = null;
 let hipsRest = null;
 let hover = 0;
@@ -1278,20 +1285,24 @@ addEventListener('drop', async (e) => {
 
 // A square picture of the stage as it is now, without the panel: for an icon or a profile image.
 // She is centred in it, because the sideways shift that makes room for the panel is left out.
-function snap(size = 1024) {
+function snap(w = 1024, h = w, type = 'image/png') {
   renderer.setPixelRatio(1);
-  renderer.setSize(size, size, false);
-  camera.aspect = 1;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
   camera.clearViewOffset();
   camera.updateProjectionMatrix();
-  rsScale(size);
+  rsScale(h);
+  // motes are sized in pixels, so a small picture needs them smaller
+  const mote = pts.material.size;
+  pts.material.size = mote * Math.min(1, h / 900);
   renderer.render(scene, camera);
-  const url = canvas.toDataURL('image/png');
+  pts.material.size = mote;
+  const url = canvas.toDataURL(type, 0.92);
   fit();
   return url;
 }
 const fit = () => {
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, WALL ? 1.5 : 2));
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -1420,15 +1431,15 @@ const q = new THREE.Quaternion();
 const m4 = new THREE.Matrix4();
 const v3 = new THREE.Vector3();
 const one = new THREE.Vector3(1, 1, 1);
-const frame = () => {
+const frame = (stepDt) => {
   const now = performance.now();
-  const raw = Math.max(0.0001, (now - lastNow) / 1000);
-  const dt = Math.min(0.05, raw);
+  const raw = stepDt ?? Math.max(0.0001, (now - lastNow) / 1000);
+  const dt = Math.min(WALL ? 0.1 : 0.05, raw);
   lastNow = now;
   T += dt;
   fps += (1 / raw - fps) * 0.05;
   if (vrm) {
-    if (S.spin && !drag) turn += dt * 0.42;
+    if (S.spin && !drag) turn += dt * spinRate;
     turntable.rotation.y = turn;
 
     const target = poseAt(S.pose, T);
@@ -1480,6 +1491,11 @@ const frame = () => {
     for (const {mesh, idx} of faceMeshes) for (const key2 of LOOK_KEYS) if (key2 in idx) mesh.morphTargetInfluences[idx[key2]] = lookNow[key2];
   }
 
+  if (WALL) {
+    off.az = 24 * Math.sin(T * 0.07);
+    off.el = 3 * Math.sin(T * 0.045 + 1.0);
+    off.k = 1.05 + 0.08 * Math.sin(T * 0.031);
+  }
   const c = CAMS[S.cam];
   const level = S.stand === 'beam' ? 3 : BGS[S.bg].dome && (S.cam === 'full' || S.cam === 'back') ? -4 : 0;
   const tgt = {ty: c.ty * height + hover * 0.13, d: c.d * (height / 1.5) * off.k * Math.max(1, 1.25 / camera.aspect), az: c.az + off.az, el: clamp(c.el + level + off.el, -15, 75)};
@@ -1489,8 +1505,9 @@ const frame = () => {
   const elv = cam.el * D2R;
   camera.position.set(cam.d * Math.cos(elv) * Math.sin(az), cam.ty + cam.d * Math.sin(elv), cam.d * Math.cos(elv) * Math.cos(az));
   camera.lookAt(0, cam.ty, 0);
-  const wide = innerWidth > 760;
-  camera.setViewOffset(innerWidth, innerHeight, wide ? -Math.min(150, innerWidth * 0.11) : 0, wide ? 0 : innerHeight * 0.2, innerWidth, innerHeight);
+  const wide = innerWidth > 760 && !WALL;
+  if (wide || innerWidth <= 760) camera.setViewOffset(innerWidth, innerHeight, wide ? -Math.min(150, innerWidth * 0.11) : 0, wide ? 0 : innerHeight * 0.2, innerWidth, innerHeight);
+  else camera.clearViewOffset();
   sky.position.copy(camera.position);
 
   const ease = 1 - Math.exp(-dt / 0.4);
@@ -1554,7 +1571,13 @@ const frame = () => {
   rainbowStep(dt, T);
   rsScale(renderer.domElement.height);
   renderer.render(scene, camera);
-  requestAnimationFrame(frame);
+  if (!manual && stepDt === undefined) requestAnimationFrame(loop);
+};
+// as a wallpaper every other frame is skipped
+const loop = () => {
+  if (manual) return;
+  if (WALL && skip++ % 2) return void requestAnimationFrame(loop);
+  frame();
 };
 
 applyStage();
@@ -1565,7 +1588,7 @@ fetch('data:application/octet-stream;base64,' + MODEL_B64)
     Object.assign(cam, {ty: CAMS.full.ty * height, d: CAMS.full.d * (height / 1.5) * 1.5, az: -30, el: 10});
     loading.style.opacity = 0;
     setTimeout(() => loading.remove(), 900);
-    requestAnimationFrame(frame);
+    requestAnimationFrame(loop);
   })
   .catch((err) => {
     loading.textContent = 'LOAD FAILED';
@@ -1573,6 +1596,18 @@ fetch('data:application/octet-stream;base64,' + MODEL_B64)
   });
 window.STAGE = {S, THEMES, sync, showTab, snap, turnTo(rad) {
   turn = rad;
+}, view(az = 0, el = 0, k = 1) {
+  Object.assign(off, {az, el, k});
+}, spinEvery(seconds) {
+  spinRate = (Math.PI * 2) / seconds;
+}, manual(on) {
+  manual = on;
+  if (!on) {
+    lastNow = performance.now();
+    requestAnimationFrame(loop);
+  }
+}, tick(dt) {
+  frame(dt);
 }, get nose() {
   return nose && {n: nose.items.length};
 }, apply: applyAll, get eyeSpot() {

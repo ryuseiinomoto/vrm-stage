@@ -2,7 +2,10 @@
 
 アニメ調の 3D アバターを眺めるページです。ブラウザだけで動き、ビルドすると 1 つの HTML ファイルになります。
 
-![profile](profile/face-bold.png)
+![動いている様子](docs/demo.gif)
+
+- 実物を開く: https://ryuseiinomoto.github.io/vrm-stage/
+- 壁紙版（操作パネルなし）: https://ryuseiinomoto.github.io/vrm-stage/wall.html
 
 ## できること
 
@@ -15,6 +18,13 @@
 - 正方形の画像保存
 - 別の `.vrm` ファイルを画面にドロップして差し替え
 
+## Mac の動く壁紙にする
+
+壁紙版のページは、操作パネルや文字を消して、カメラがゆっくり動くだけの画面です。描画は毎秒 30 コマに抑えています。
+
+1. Web ページを壁紙にできるアプリ（例: [Plash](https://sindresorhus.com/plash)）を入れる
+2. 壁紙版の URL を登録する
+
 ## 構成
 
 | 場所 | 内容 |
@@ -24,17 +34,20 @@
 | `stage-live/ruins.js` | 荒廃都市の近景（高架道路、鉄塔、クレーン、看板、火と煙） |
 | `stage-live/nearcity.js` | 鉄骨と、その両端の作り込んだビル 2 棟 |
 | `model/girl.glb` | 同梱のアバター（下記クレジット参照） |
-| `tools/snap.mjs` | 画像書き出し用のスクリプト |
+| `stage-wall/` | 壁紙版の入口 |
+| `tools/snap.mjs` | 正方形の画像を書き出す |
+| `tools/record.mjs` と `tools/gif.swift` | コマ送りで録画して GIF にまとめる |
+| `docs/` | 公開しているページ（通常版、壁紙版）と GIF |
 | `releases/v1.0/` | バージョン 1.0 の完成ページとソース |
 
 ## ビルド
 
 ```
 npm install
-node ~/.claude/skills/teardown/sims/build.mjs ./stage-live
+node ~/.claude/skills/teardown/sims/build.mjs ./stage-live ./stage-wall
 ```
 
-出力は `teardown-out/dist/stage-live.html` です。ビルドには [elvarofficial/teardown](https://github.com/elvarofficial/teardown)（MIT）のビルドスクリプトを使っています。
+出力は `teardown-out/dist/` の `stage-live.html` と `stage-wall.html` です。ビルドには [elvarofficial/teardown](https://github.com/elvarofficial/teardown)（MIT）のビルドスクリプトを使っています。
 
 ## クレジット
 
