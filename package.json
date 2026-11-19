@@ -1,0 +1,10 @@
+{
+  "name": "vrm-stage",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A dark-stage viewer for an anime-style VRM avatar.",
+  "dependencies": {
+    "@pixiv/three-vrm": "3.5.5",
+    "three": "0.186.1"
+  }
+}
